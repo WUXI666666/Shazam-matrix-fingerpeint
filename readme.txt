@@ -1,4 +1,4 @@
-基于Shazam指纹的听音识曲
+基于Shazam指纹的听音识曲,fingerprint用矩阵存储
 使用前先执行createbase.py创建音频数据
 searchAudio.py为执行入口
 其中有几个函数在代码中有多种实现。

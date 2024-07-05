@@ -1,4 +1,5 @@
 from genericpath import isfile
+from typing import Tuple
 import numpy as np
 import os
 import librosa
@@ -96,84 +97,77 @@ def load_database():
     return server_tables, offset_times, song_names
 
 # 比较两个指纹表
-def comparetables(table):
+def comparetables(hash_matrix: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     server_tables, offset_times, _ = load_database()
     matched_pairs_list = np.zeros((len(server_tables), 1))
     hist_list = np.zeros((len(server_tables), 1))
+
     for h in range(len(server_tables)):
         matched_pairs = 0
-        add_to_hist = []#偏移时间
-        for i in range(513):#遍历每个频率位置
-            if table[i]:
-                for j in table[i]:#每个频率的指纹
-                    if j in server_tables[h][i]:
-                        indices = [i for i, x in enumerate(server_tables[h][i]) if x == j]
-                        #enumerate 函数用于将这个列表生成一个枚举对象，每个元素都是一个 (索引, 值) 对。
-                        matched_pairs += len(indices)
-                        for o in indices:
-                            add_to_hist.append(offset_times[h][i][o])
+        add_to_hist = []
+
+        for song_hash in hash_matrix:
+            freq_anchor, freq_other, delta_time, time_anchor, _ = song_hash
+            matches = server_tables[h][(server_tables[h][:, 0] == freq_anchor) & 
+                                       (server_tables[h][:, 1] == freq_other) &
+                                       (server_tables[h][:, 2] == delta_time)]
+            matched_pairs += len(matches)
+            add_to_hist.extend(matches[:, 3])
+
         matched_pairs_list[h] = matched_pairs
         if add_to_hist:
             maxh = np.max(add_to_hist)
             hist, edges = np.histogram(add_to_hist, bins=range(0, (maxh + (maxh + 1) % 2050), 2050))
-            hist_list[h] = np.max(hist)#一个区间中最多匹配次数
+            hist_list[h] = np.max(hist)
+
     return matched_pairs_list, hist_list
 
-# 查找歌曲ID，通过衡量匹配比率和集中度，如果 max_hist 值高，说明在某个时间偏移上有大量的匹配，意味着在这个时间偏移上，两个音频的相似度非常高。
-def fetchID(fprint):
-    matched_pairs, hists = comparetables(fprint)
-    num_pairs = sum(map(len, fprint))
+def fetchID(hash_matrix: np.ndarray) :
+    matched_pairs_list, hist_list = comparetables(hash_matrix)
+    num_pairs = hash_matrix.shape[0]
+
+    if num_pairs == 0 or len(matched_pairs_list) == 0:
+        return [("Not found!", 0, 0)]
     
-    # 检查是否有匹配
-    if num_pairs == 0 or len(matched_pairs) == 0:
-        return "Not found!"
-    
-    ratios = matched_pairs / num_pairs
-    
-    # 检查 ratios 是否为空
+    ratios = matched_pairs_list / num_pairs
     if len(ratios) == 0 or np.all(ratios == 0):
-        return "Not found!"
+        return [("Not found!", 0, 0)]
     
-    max_match = np.max(ratios)
-    max_hist = np.max(hists)
-    id_value = np.where(ratios == max_match)
-    id_hist = np.where(hists == max_hist)
-    
-    # 检查 id_value 和 id_hist 是否为空，并提取单个元素
-    if id_value[0].size == 0 or id_hist[0].size == 0 or id_value[0][0] != id_hist[0][0]:
-        id = -1
-    else:
-        id = id_value
-    
+    # 获取前三个匹配度最高的歌曲信息
+    top_matches = sorted(
+        [(i, ratios[i][0], hist_list[i][0]) for i in range(len(ratios))],
+        key=lambda x: (-x[1], -x[2])
+    )[:3]
+
     _, _, song_names = load_database()
-    if id == -1:
-        name = "Not found!"
-    else:
-        name = song_names[id[0][0]]
-    
-    print('Number of Matches\t' + 'Ratio\t\t' + 'Hist max\t\t' 'Song Name')
-    for i in range(min(10, len(matched_pairs))):
-        matched_pairs_value = matched_pairs[i][0] if matched_pairs[i].size > 0 else 0
-        ratios_value = ratios[i][0] if ratios[i].size > 0 else 0
-        hists_value = hists[i][0] if hists[i].size > 0 else 0
-        song_name = song_names[i] if len(song_names) > i else "Unknown"
-        print(f"{matched_pairs_value}\t\t\t{ratios_value:.4f}\t\t{hists_value:.4f}\t\t{song_name}")
-    
-    return name
+    top_match_info = [(song_names[i], ratio, hist) for i, ratio, hist in top_matches]
 
+    return top_match_info
 
-# 听歌识曲功能
-def recognize_song_from_path(query_path):
+def recognize_song_from_path(query_path: str) -> None:
     x, fs = librosa.load(query_path, sr=8192, mono=True)
     F_print = createfingerprint(x)
-    T = createhashes(F_print, offset=False)
-    song_name = fetchID(T)
-    return song_name
-def recognize_song(x):
+    song_id = 0  # 对于查询，我们使用一个临时的song_id，例如0
+    hash_matrix = createhashes(F_print, song_id=song_id)
+    top_matches = fetchID(hash_matrix)
+
+    print('Top 3 Matches:')
+    print('Song Name\t\tRatio\t\tHist max')
+    for match in top_matches:
+        song_name, ratio, hist = match
+        print(f"{song_name}\t\t{ratio:.4f}\t\t{hist:.4f}")
+
+def recognize_song(x: np.ndarray) -> None:
     F_print = createfingerprint(x)
-    T = createhashes(F_print, offset=False)
-    song_name = fetchID(T)
-    return song_name
+    song_id = 0  # 对于查询，我们使用一个临时的song_id，例如0
+    hash_matrix = createhashes(F_print, song_id=song_id)
+    top_matches = fetchID(hash_matrix)
+
+    print('Top 3 Matches:')
+    print('Song Name\t\tRatio\t\tHist max')
+    for match in top_matches:
+        song_name, ratio, hist = match
+        print(f"{song_name}\t\t{ratio:.4f}\t\t{hist:.4f}")
 # 比较两个音频文件
 def compare_2songs(path1, path2):
     Y1 = compute_spectrogram(path1)

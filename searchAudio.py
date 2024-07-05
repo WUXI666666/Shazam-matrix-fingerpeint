@@ -156,6 +156,9 @@ def recognize_song_from_path(query_path: str) -> None:
     for match in top_matches:
         song_name, ratio, hist = match
         print(f"{song_name}\t\t{ratio:.4f}\t\t{hist:.4f}")
+    # 输出最匹配的歌曲
+    best_match = top_matches[0][0]
+    print(f"\nMost matched song: {best_match}")
 
 def recognize_song(x: np.ndarray) -> None:
     F_print = createfingerprint(x)
@@ -168,6 +171,9 @@ def recognize_song(x: np.ndarray) -> None:
     for match in top_matches:
         song_name, ratio, hist = match
         print(f"{song_name}\t\t{ratio:.4f}\t\t{hist:.4f}")
+    # 输出最匹配的歌曲
+    best_match = top_matches[0][0]
+    print(f"\nMost matched song: {best_match}")
 # 比较两个音频文件
 def compare_2songs(path1, path2):
     Y1 = compute_spectrogram(path1)
@@ -203,6 +209,6 @@ def compare_dir(path, fn_query):
 # 听歌识曲
 song_name = recognize_song_from_path("./tests/test_3.wav")
 # song_name=recognize_song (recordaudio())
-print(f"Recognized song: {song_name}")
+
 
 plt.show()
